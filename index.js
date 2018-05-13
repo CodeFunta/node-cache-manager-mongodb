@@ -65,29 +65,38 @@ function MongoStore(args) {
   if ('string' === typeof conn) {
     Client.connect(conn, store.MongoOptions, function getDb(err, db) {
       store.client = db;
-      db.createCollection(store.coll, function (err, collection) {
-        if(err) {
-          'function' === typeof args.createCollectionCallback && args.createCollectionCallback(err);
-          return;
-        }
-        store.collection = collection;
-        // Create an index on the a field
-        collection.createIndex({
-          expire: 1
-        }, {
-            unique: true,
-            background: true,
-            expireAfterSeconds: store.MongoOptions.ttl
-          }, function (err, indexName) {
-            if (err) {
-              console.warn("Error During Indexes creation");
-            }
-            if ('function' === typeof args.createCollectionCallback) {
-              args.createCollectionCallback(err, store);
-            }
-          });
-      });
+      store.initCollection(args);
     });
+  }
+
+  MongoStore.prototype.initCollection = function _initCollection(args) {
+    if (store.collection) {
+      'function' === typeof args.createCollectionCallback && args.createCollectionCallback(null, store);
+      return;
+    }
+    var db = store.client;
+    db.createCollection(this.coll, function (err, collection) {
+      if (err) {
+        'function' === typeof args.createCollectionCallback && args.createCollectionCallback(err);
+        console.warn("Error during collection create");
+        return;
+      }
+      store.collection = collection;
+      // Create an index on the a field
+      collection.createIndex({
+        expire: 1
+      }, {
+          unique: true,
+          background: true,
+          expireAfterSeconds: store.MongoOptions.ttl
+        }, function (err, indexName) {
+          if (err) {
+            console.warn("Error during Indexes creation");
+          }
+          'function' === typeof args.createCollectionCallback && args.createCollectionCallback(err, store);
+        });
+    });
+
   }
 
   /**
@@ -146,27 +155,33 @@ MongoStore.prototype.get = function get(key, options, fn) {
   fn = fn || noop;
 
   var store = this;
-
-  store.collection.findOne({
-    key: key
-  }, function findOne(err, data) {
-    if (err) {
-      return fn(err);
-    }
-    if (!data) {
-      return fn(null, null);
-    }
-    if (data.expire < Date.now()) {
-      store.del(key);
-      return fn(null, null);
-    }
-    try {
-      if (data.compressed) {
-        return store.decompress(data.value, fn);
+  store.initCollection({
+    createCollectionCallback: (err, store) => {
+      if (err) {
+        return fn(err);
       }
-      fn(null, data.value);
-    } catch (err) {
-      fn(err);
+      store.collection.findOne({
+        key: key
+      }, function findOne(err, data) {
+        if (err) {
+          return fn(err);
+        }
+        if (!data) {
+          return fn(null, null);
+        }
+        if (data.expire < Date.now()) {
+          store.del(key);
+          return fn(null, null);
+        }
+        try {
+          if (data.compressed) {
+            return store.decompress(data.value, fn);
+          }
+          fn(null, data.value);
+        } catch (err) {
+          fn(err);
+        }
+      });
     }
   });
 };
@@ -223,14 +238,21 @@ MongoStore.prototype.set = function set(key, val, options, fn) {
   }
 
   function update(data) {
-    store.collection.update(query, data, options, function _update(err, data) {
-      if (err) {
-        return fn(err);
+    store.initCollection({
+      createCollectionCallback: (err, store) => {
+        if (err) {
+          return fn(err);
+        }
+        store.collection.update(query, data, options, function _update(err, data) {
+          if (err) {
+            return fn(err);
+          }
+          if (!data) {
+            return fn(null, null);
+          }
+          fn(null, val);
+        });
       }
-      if (!data) {
-        return fn(null, null);
-      }
-      fn(null, val);
     });
   }
 
@@ -250,11 +272,19 @@ MongoStore.prototype.del = function del(key, options, fn) {
   }
   var store = this;
   fn = fn || noop;
-  store.collection.remove({
-    key: key
-  }, {
-      safe: true
-    }, fn);
+  store.initCollection({
+    createCollectionCallback: (err, store) => {
+      if (err) {
+        return fn(err);
+      }
+      store.collection.remove({
+        key: key
+      }, {
+          safe: true
+        }, fn);
+    }
+  });
+
 };
 
 /**
@@ -274,10 +304,17 @@ MongoStore.prototype.reset = function reset(key, fn) {
   }
 
   fn = fn || noop;
+  store.initCollection({
+    createCollectionCallback: (err, store) => {
+      if (err) {
+        return fn(err);
+      }
+      store.collection.remove({}, {
+        safe: true
+      }, fn);
+    }
+  });
 
-  store.collection.remove({}, {
-    safe: true
-  }, fn);
 
 };
 
