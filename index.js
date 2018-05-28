@@ -64,12 +64,12 @@ function MongoStore(args) {
 
   if ('string' === typeof conn) {
     Client.connect(conn, store.MongoOptions, function getDb(err, db) {
+      store.client = db;
       if (err) {
         'function' === typeof args.createCollectionCallback && args.createCollectionCallback(err);
         console.warn("Error during mongo connect");
         return;
       }
-      store.client = db;
       store.initCollection(args);
     });
   }
@@ -80,6 +80,11 @@ function MongoStore(args) {
       return;
     }
     var db = store.client;
+    if (!db) {
+      'function' === typeof args.createCollectionCallback && args.createCollectionCallback('mongo client is not connected');
+      console.warn("mongo client is not connected");
+      return;
+    }
     db.createCollection(this.coll, function (err, collection) {
       if (err) {
         'function' === typeof args.createCollectionCallback && args.createCollectionCallback(err);
