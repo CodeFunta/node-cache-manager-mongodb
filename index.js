@@ -64,6 +64,11 @@ function MongoStore(args) {
 
   if ('string' === typeof conn) {
     Client.connect(conn, store.MongoOptions, function getDb(err, db) {
+      if (err) {
+        'function' === typeof args.createCollectionCallback && args.createCollectionCallback(err);
+        console.warn("Error during mongo connect");
+        return;
+      }
       store.client = db;
       store.initCollection(args);
     });
