@@ -61,52 +61,57 @@ function MongoStore(args) {
   conn = conn || 'mongodb://127.0.0.1:27017';
   store.coll = store.MongoOptions.collection || 'cacheman';
   store.compression = store.MongoOptions.compression || false;
-
-  if ('string' === typeof conn) {
-    Client.connect(conn, store.MongoOptions, function getDb(err, db) {
-      store.client = db;
-      if (err) {
-        'function' === typeof args.createCollectionCallback && args.createCollectionCallback(err);
-        console.warn("Error during mongo connect");
-        return;
-      }
-      store.initCollection(args);
-    });
-  }
+ 
 
   MongoStore.prototype.initCollection = function _initCollection(args) {
-    if (store.collection) {
-      'function' === typeof args.createCollectionCallback && args.createCollectionCallback(null, store);
-      return;
-    }
-    var db = store.client;
-    if (!db) {
-      'function' === typeof args.createCollectionCallback && args.createCollectionCallback('mongo client is not connected');
-      console.warn("mongo client is not connected");
-      return;
-    }
-    db.createCollection(this.coll, function (err, collection) {
-      if (err) {
-        'function' === typeof args.createCollectionCallback && args.createCollectionCallback(err);
-        console.warn("Error during collection create");
+    let init_func = () => {
+      if (store.collection) {
+        'function' === typeof args.createCollectionCallback && args.createCollectionCallback(null, store);
         return;
       }
-      store.collection = collection;
-      // Create an index on the a field
-      collection.createIndex({
-        expire: 1
-      }, {
-          unique: true,
-          background: true,
-          expireAfterSeconds: store.MongoOptions.ttl
-        }, function (err, indexName) {
-          if (err) {
-            console.warn("Error during Indexes creation");
-          }
-          'function' === typeof args.createCollectionCallback && args.createCollectionCallback(err, store);
-        });
-    });
+      var db = store.client;
+      if (!db) {
+        'function' === typeof args.createCollectionCallback && args.createCollectionCallback('mongo client is not connected');
+        console.warn("mongo client is not connected");
+        return;
+      }
+      db.createCollection(this.coll, function (err, collection) {
+        if (err) {
+          'function' === typeof args.createCollectionCallback && args.createCollectionCallback(err);
+          console.warn("Error during collection create");
+          return;
+        }
+        store.collection = collection;
+        // Create an index on the a field
+        collection.createIndex({
+          expire: 1
+        }, {
+            unique: true,
+            background: true,
+            expireAfterSeconds: store.MongoOptions.ttl
+          }, function (err, indexName) {
+            if (err) {
+              console.warn("Error during Indexes creation");
+            }
+            'function' === typeof args.createCollectionCallback && args.createCollectionCallback(err, store);
+          });
+      });
+    };
 
+    if ('string' === typeof conn && !store.client) {
+      Client.connect(conn, store.MongoOptions, function getDb(err, db) {
+        store.client = db;
+        if (err) {
+          'function' === typeof args.createCollectionCallback && args.createCollectionCallback(err);
+          //console.warn("Error during mongo connect");
+          return;
+        }
+        init_func();
+      });
+    }
+    else {
+      init_func();
+    }
   }
 
   /**
